@@ -935,10 +935,12 @@ test.describe("a 404 that decodes as a card back", () => {
       document.body.lastElementChild.remove();
       return tag;
     })).toBe("img");
-    // ...and it does not even emit the handler.
+    /* Riftbound's images still carry data-card (the listeners are shared and
+       global now), but imgLoaded() returns immediately without a declared
+       placeholder, so nothing is ever swapped. */
     expect(await page.evaluate(() =>
       [...document.querySelectorAll("#results .frame img")]
-        .filter((i) => i.getAttribute("onload")).length)).toBe(0);
+        .filter((i) => i.dataset.card).length)).toBeGreaterThan(0);
   });
 
   test("the card panel says the image is missing, once", async ({ page }) => {
@@ -985,7 +987,10 @@ test.describe("a 404 that decodes as a card back", () => {
     expect(await page.locator("#modalBox .artmiss").count()).toBe(0);
   });
 
-  test("Pokémon emits the handler on every card image", async ({ page }) => {
+  test("every card image is wired to the load/error listeners", async ({ page }) => {
+    /* The handlers are delegated now — no inline onload/onerror anywhere, so the
+       CSP can forbid inline script. What each image carries instead is the
+       data-card the capture listeners read. */
     await page.addInitScript(() => localStorage.setItem("ch.game", "pokemon"));
     await openApp(page);
     await page.waitForFunction(() => PIDX !== null);
@@ -994,10 +999,13 @@ test.describe("a 404 that decodes as a card back", () => {
     const r = await page.evaluate(() => {
       const imgs = [...document.querySelectorAll("#results .frame img")];
       return { total: imgs.length,
-               wired: imgs.filter((i) => /imgLoaded/.test(i.getAttribute("onload") || "")).length };
+               wired: imgs.filter((i) => i.dataset.card).length,
+               inlineHandlers: imgs.filter((i) =>
+                 i.getAttribute("onload") || i.getAttribute("onerror")).length };
     });
     expect(r.total).toBeGreaterThan(0);
     expect(r.wired).toBe(r.total);
+    expect(r.inlineHandlers).toBe(0);
   });
 });
 

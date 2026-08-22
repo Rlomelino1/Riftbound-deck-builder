@@ -4,15 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<!-- Defence-in-depth CSP. A <meta> CSP can't set frame-ancestors, and script-src
-     must keep 'unsafe-inline' because the app's own scripts and onclick handlers
-     are inline — so this does NOT constrain injected script. What it DOES do is
-     contain a hypothetical XSS: script-src is 'self' only (the SDK is vendored,
-     no CDN), connect-src pins network to the two Neon hosts (no exfiltration
-     elsewhere), img-src to Riot's CDN, and base-uri/object-src/form-action shut
-     the usual escalation paths. Validated non-breaking against the live app
-     before shipping. Endpoints must match the NEON config below. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline'; connect-src https://ep-flat-tooth-ay7zxkh2.neonauth.c-5.us-east-2.aws.neon.tech https://ep-flat-tooth-ay7zxkh2.apirest.c-5.us-east-2.aws.neon.tech 'self'; img-src https://cmsassets.rgpub.io https://images.pokemontcg.io https://images.scrydex.com data:; base-uri 'none'; object-src 'none'; form-action 'none'">
+<!-- The CSP that actually contains an XSS. It used to keep 'unsafe-inline' on
+     script-src, because the app's own scripts and its onclick handlers were
+     inline — which meant the policy could not constrain injected script at all,
+     and one missed esc() was an XSS. Both halves of that are gone: no handler is
+     inline any more (see the delegated ACTIONS map), and each remaining inline
+     script is named by its sha256. So an injected script element does not run,
+     and neither does an injected onerror.
+
+     THE HASHES ARE LOAD-BEARING. Edit any inline script and they must be
+     recomputed, or the page is blank — not degraded, blank. Three things stop a
+     stale hash reaching anyone: .gitattributes pins this file to LF so the bytes
+     are identical on Windows, CI and Pages; `node scripts/csp-hashes.mjs
+     --write` recomputes them; and tests/e2e/csp.spec.js fails when they drift,
+     which `main` will not merge past.
+
+     'self' stays on script-src for the vendored SDK's module imports. A <meta>
+     CSP still can't set frame-ancestors. connect-src pins the network to the two
+     Neon hosts, img-src to the three card-art hosts, and
+     base-uri/object-src/form-action shut the usual escalation paths. Endpoints
+     must match the NEON config below. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-K+Mag1YI69itJNEnvf8CwyuPfUeph+/iRJwe8v7w2j8=' 'sha256-14MdWpYLc1FGYKi00bgAMWUVlSFyKd0YfnnSRUjsfsk=' 'sha256-P5ay3voDqDj+tfDrPI2fQSpBrqyL0ggU0a++tlL0fTI=' 'self'; style-src 'unsafe-inline'; connect-src https://ep-flat-tooth-ay7zxkh2.neonauth.c-5.us-east-2.aws.neon.tech https://ep-flat-tooth-ay7zxkh2.apirest.c-5.us-east-2.aws.neon.tech 'self'; img-src https://cmsassets.rgpub.io https://images.pokemontcg.io https://images.scrydex.com data:; base-uri 'none'; object-src 'none'; form-action 'none'">
 <!-- Three card-art hosts, one per source. Riot's CDN serves Riftbound.
      Pokémon art comes from images.pokemontcg.io for 170 of the 174 English
      sets and from images.scrydex.com for the four Mega Evolution sets — cards,
@@ -931,8 +943,8 @@ h2 span{color:var(--text); font-size:12px; letter-spacing:.03em}
     <div class="gamemenu" id="gameMenu" hidden></div>
   </div>
   <nav class="viewnav" aria-label="View">
-    <button class="vtab on" data-goview="deck" onclick="goView('deck')">Deckbuilder</button>
-    <button class="vtab" data-goview="collection" onclick="goView('collection')">Collection</button>
+    <button class="vtab on" data-goview="deck" data-a="goView" data-a1="deck">Deckbuilder</button>
+    <button class="vtab" data-goview="collection" data-a="goView" data-a1="collection">Collection</button>
   </nav>
   <div class="deckid">
     <input id="deckName" value="Untitled deck" aria-label="Deck name">
@@ -945,8 +957,8 @@ h2 span{color:var(--text); font-size:12px; letter-spacing:.03em}
   </div>
   <div class="topright">
     <span class="syncstate" id="syncState" hidden></span>
-    <button class="btn" id="saveBtn" onclick="saveDeckCloud()" hidden>Save deck</button>
-    <button class="btn themebtn" id="themeBtn" onclick="toggleTheme()">
+    <button class="btn" id="saveBtn" data-a="saveDeck" hidden>Save deck</button>
+    <button class="btn themebtn" id="themeBtn" data-a="toggleTheme">
       <i class="dot"></i><span id="themeLabel">Paper</span></button>
     <div class="acct" id="acct"></div>
   </div>
@@ -992,8 +1004,8 @@ h2 span{color:var(--text); font-size:12px; letter-spacing:.03em}
 
   <div id="onboard" class="onboard">
     <p id="onboardMsg">Loading cards&hellip;</p>
-    <button class="btn go" id="onboardRetry" onclick="loadPool()" hidden>Try again</button>
-    <button class="btn quiet" id="onboardPick" onclick="picker.click()" hidden>Import a pool file instead</button>
+    <button class="btn go" id="onboardRetry" data-a="loadPool" hidden>Try again</button>
+    <button class="btn quiet" id="onboardPick" data-a="pickFile" hidden>Import a pool file instead</button>
   </div>
 
   <div id="browser" hidden>
@@ -1037,10 +1049,10 @@ h2 span{color:var(--text); font-size:12px; letter-spacing:.03em}
   </div>
   <div id="zoneList"></div>
   <div class="actions">
-    <button class="btn go" onclick="exportDeck()">Export deck</button>
-    <button class="btn" onclick="copyText()">Copy as text</button>
-    <button class="btn quiet" onclick="picker.click()">Import</button>
-    <button class="btn quiet" onclick="wipe()">Reset</button>
+    <button class="btn go" data-a="exportDeck">Export deck</button>
+    <button class="btn" data-a="copyText">Copy as text</button>
+    <button class="btn quiet" data-a="pickFile">Import</button>
+    <button class="btn quiet" data-a="wipe">Reset</button>
   </div>
 </aside>
 </div>
@@ -1066,10 +1078,10 @@ h2 span{color:var(--text); font-size:12px; letter-spacing:.03em}
       <p class="cplabel">Still missing</p>
       <p class="cmisscount"><b id="colMissN">–</b> cards</p>
       <p class="cmissnote" id="colMissNote"></p>
-      <button class="btn cmisswide" onclick="colShowMissing()">Show only missing</button>
+      <button class="btn cmisswide" data-a="colShowMissing">Show only missing</button>
       <div class="cmissrow">
-        <button class="btn" id="colMarkBtn" onclick="colMarkAll()">Mark set owned</button>
-        <button class="btn quiet" onclick="colClear()">Clear</button>
+        <button class="btn" id="colMarkBtn" data-a="colMarkAll">Mark set owned</button>
+        <button class="btn quiet" data-a="colClear">Clear</button>
       </div>
     </section>
   </div>
@@ -2159,18 +2171,13 @@ const zoneFor = t => {
 };
 const esc = s => String(s ?? "").replace(/[&<>"']/g, m =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
-/* For a value going into a JS string literal inside an inline handler
-   (onclick="fn('HERE')"). esc() is WRONG there: it produces &#39;, which the
-   HTML parser decodes back to ' before the JS runs, closing the string and
-   letting an imported deck name run script. Escape for both layers instead —
-   the HTML attribute first (& and " so the value can't start an entity or
-   close the double-quoted attribute), then the JS string (\ ' and newlines).
-   Order matters: neutralise & before we introduce any &quot;. */
-const jsStr = s => String(s ?? "")
-  .replace(/&/g, "&amp;").replace(/"/g, "&quot;")
-  .replace(/\\/g, "\\\\").replace(/'/g, "\\'")
-  .replace(/\n/g, "\\n").replace(/\r/g, "\\r")
-  .replace(/</g, "\\x3C").replace(/>/g, "\\x3E");
+/* There is deliberately no jsStr() any more. It existed because a value going
+   into an inline handler had to survive the HTML attribute parser AND THEN the
+   JS parser, and getting that pair wrong is a subtle XSS — the reason it was
+   written in the first place. No handler is inline now: controls carry data
+   attributes that are only ever read as strings, so esc() alone is correct
+   everywhere. If you find yourself wanting a JS-string escaper again you are
+   adding an inline handler, and the CSP will refuse to run it. */
  
 /* ------------------------------ persistence ----------------------------- */
 /* What gets stored — locally or in a deck row — is a reference and a
@@ -2758,7 +2765,7 @@ function renderGameMenu(){
        <span class="gmstate${on ? " on" : ""}">${on ? "Active" : "Switch"}</span>`;
     return on
       ? `<div class="gmrow active">${inner}</div>`
-      : `<button class="gmrow" onclick="switchGame('${jsStr(id)}')"
+      : `<button class="gmrow" data-a="switchGame" data-a1="${esc(id)}"
            ${GAME_SWITCHING ? "disabled" : ""}>${inner}</button>`;
   }).join("");
   const planned = PLANNED_GAMES.map(g => `
@@ -2969,13 +2976,13 @@ function renderSetBar(){
   // letting a click that does nothing read as a dead button.
   const lone = S.setScope.length === 1;
   document.getElementById("setChips").innerHTML =
-    `<button class="setchip${S.setScopeAll ? " on" : ""}" onclick="toggleSetScope('all')">All sets</button>` +
+    `<button class="setchip${S.setScopeAll ? " on" : ""}" data-a="toggleSetScope" data-a1="all">All sets</button>` +
     sets.map(s => {
       const on = S.setScope.includes(s.code);
       const pinned = on && lone;
       return `<button class="setchip${on ? " on" : ""}"${pinned
         ? ` title="At least one set stays in scope"` : ""}
-      onclick="toggleSetScope('${jsStr(s.code)}')">${esc(s.name)}
+      data-a="toggleSetScope" data-a1="${esc(s.code)}">${esc(s.name)}
       <b>${setCardsOf(s.code).length}</b></button>`;
     }).join("");
   const n = S.setScope.length, cards = scopedPool().length;
@@ -3021,7 +3028,7 @@ function renderDeckMenu(){
     menu.innerHTML = `<div class="dmempty">Your deck is saved in this browser.
       Sign in to keep decks in your account and switch between them here —
       on this device and on your phone.<br>
-      <button class="btn go" onclick="toggleDeckMenu(false);window.openAuthModal?.()">Sign in</button>
+      <button class="btn go" data-a="signIn">Sign in</button>
     </div>`;
     return;
   }
@@ -3030,13 +3037,13 @@ function renderDeckMenu(){
     const open = d.id === S.deckId;
     return `<div class="dmrow">
       <i class="accent" style="${accentStyle(m.domains)}"></i>
-      <button class="dmmain" onclick="switchDeck('${d.id}')">
+      <button class="dmmain" data-a="switchDeck" data-a1="${esc(d.id)}">
         <span class="dmname">${esc(d.name)}</span>
         <span class="dmsub">${GAME.legend
           ? esc(m.legendName || "No legend yet") + " · " : ""}${m.counts}</span>
       </button>
       <span class="dmmeta${open?" open":""}">${open ? "open" : ago(d.updated_at)}</span>
-      <button class="dmdel" onclick="deleteDeckRow('${d.id}')"
+      <button class="dmdel" data-a="deleteDeck" data-a1="${esc(d.id)}"
         title="Delete ${esc(d.name)}" aria-label="Delete ${esc(d.name)}">&#10005;</button>
     </div>`;
   }).join("");
@@ -3046,8 +3053,8 @@ function renderDeckMenu(){
     + (rows || `<div class="dmempty">No saved ${esc(GAME.label)} decks yet. Build one and hit Save.<br>
          A deck belongs to the game it was built in.</div>`)
     + `<div class="dmacts">
-        <button class="btn" onclick="newDeck()">+ New deck</button>
-        <button class="btn" onclick="duplicateDeck()"
+        <button class="btn" data-a="newDeck">+ New deck</button>
+        <button class="btn" data-a="duplicateDeck"
           ${S.deckId ? "" : `disabled title="Save this deck first — an unsaved deck has nothing to duplicate from"`}>
           Duplicate current</button>
       </div>`;
@@ -3325,7 +3332,7 @@ function renderColSetBar(){
   bar.hidden = GAME.lazySets || VIEW !== "collection" || !sets.length;
   if(bar.hidden) return;
   const chip = (code, label, meta, on) =>
-    `<button class="setchip${on ? " on" : ""}" onclick="setColSet('${jsStr(code)}')">${esc(label)} <b>${meta}</b></button>`;
+    `<button class="setchip${on ? " on" : ""}" data-a="setColSet" data-a1="${esc(code)}">${esc(label)} <b>${meta}</b></button>`;
   document.getElementById("colSetChips").innerHTML =
     chip("all", "All sets", S.pool.length, COLF.set === "all") +
     sets.map(s => {
@@ -3532,11 +3539,10 @@ function colTileHtml(c){
   const missing = COL_READY && q === 0;
   const tag = GAME.colTag(c);
   const border = c.domains[0] ? `var(--${c.domains[0]})` : "var(--Colorless)";
-  const idq = jsStr(id);
   const art = c.image
     ? `<img src="${esc(thumb(c.image))}" alt="" loading="lazy" decoding="async"
          referrerpolicy="no-referrer"
-         onerror="imgFail(this,'${jsStr(c.name)}')"${GAME.artPlaceholder ? ` onload="imgLoaded(this,'${jsStr(c.name)}')"` : ""}>`
+         data-card="${esc(c.name)}">`
     : fallbackSvg(c);
   const own = !COL_READY ? "" :
     missing ? `<span class="cown miss">Missing</span>`
@@ -3545,7 +3551,7 @@ function colTileHtml(c){
     `<i class="${q >= i + 1 ? (q >= cap ? "full" : "on") : ""}"></i>`).join("");
   return `<figure class="ctile${missing ? " ismissing" : ""}" data-ref="${esc(id)}">
     <button class="cframe" style="--fc:${border}" title="${esc(c.name)}"
-      onclick="openCard('${idq}')">
+      data-a="openCard" data-a1="${esc(id)}">
       ${art}
       <span class="hatch"></span>
       ${c.energy > 0 ? `<span class="orb">${c.energy}</span>` : ""}
@@ -3556,10 +3562,10 @@ function colTileHtml(c){
     <figcaption class="tname" title="${esc(c.name)}">${esc(c.name)}</figcaption>
     <p class="ttype">${esc(c.rarity || "")}${c.rarity && c.type ? " · " : ""}${esc(c.type || "")}</p>
     <div class="cstep">
-      <button class="step" onclick="colBump('${idq}',-1)"
+      <button class="step" data-a="colBump" data-a1="${esc(id)}" data-a2="-1"
         ${(!COL_READY || q === 0) ? "disabled" : ""} aria-label="Remove a copy">–</button>
       <span class="cseg" aria-label="${q} of ${cap} copies">${segs}</span>
-      <button class="step" onclick="colBump('${idq}',1)"
+      <button class="step" data-a="colBump" data-a1="${esc(id)}" data-a2="1"
         ${(!COL_READY || q >= cap) ? "disabled" : ""} aria-label="Add a copy">+</button>
     </div>
   </figure>`;
@@ -3632,7 +3638,7 @@ function renderColSummary(){
     const n = COL_READY ? base.filter(c => colTabMatch(qtyOf(refOf(c)), k)).length
                         : (k === "all" ? base.length : "–");
     return `<button class="coltab${COLF.tab === k ? " on" : ""}"
-      onclick="setColTab('${k}')">${label}<b>${n}</b></button>`;
+      data-a="setColTab" data-a1="${esc(k)}">${label}<b>${n}</b></button>`;
   }).join("");
 
   const shown = base.filter(c => colTabMatch(qtyOf(refOf(c)), COLF.tab)).length;
@@ -3654,10 +3660,10 @@ function renderCollection(){
 
   document.getElementById("colDomainRow").innerHTML = DOMAINS.map(d =>
     `<button class="chip dchip${COLF.domains.includes(d) ? " on" : ""}"
-      style="--c:var(--${d});--dt:${DOMAIN_INK[d]}" onclick="toggleColChip('domains','${d}')">${d}</button>`).join("");
+      style="--c:var(--${d});--dt:${DOMAIN_INK[d]}" data-a="toggleColChip" data-a1="domains" data-a2="${esc(d)}">${d}</button>`).join("");
   document.getElementById("colTypeRow").innerHTML = TYPES.map(t =>
     `<button class="chip${COLF.types.includes(t) ? " on" : ""}"
-      onclick="toggleColChip('types','${t}')">${t}</button>`).join("");
+      data-a="toggleColChip" data-a1="types" data-a2="${esc(t)}">${t}</button>`).join("");
 
   const scope = colScoped();
   const base = colBase();
@@ -3822,13 +3828,13 @@ function tileHtml(c, acts){
   const art = c.image
     ? `<img src="${esc(thumb(c.image))}" alt="${esc(c.name)}" loading="lazy" decoding="async"
          referrerpolicy="no-referrer"
-         onerror="imgFail(this,'${jsStr(c.name)}')"${GAME.artPlaceholder ? ` onload="imgLoaded(this,'${jsStr(c.name)}')"` : ""}>`
+         data-card="${esc(c.name)}">`
     : fallbackSvg(c);
   const tag = GAME.colTag(c);
   return `<figure class="tile${offDomain(c)?" flagged":""}">
     <button class="frame" style="background:${frameStyle(c)}"
       title="${esc(c.name)}${tag?" — "+esc(tag):""}"
-      onclick="openCard('${jsStr(refOf(c))}')">
+      data-a="openCard" data-a1="${esc(refOf(c))}">
       ${art}
       ${GAME.tileBadges(c)}
     </button>
@@ -3869,7 +3875,7 @@ function render(){
           `<i class="pip" style="background:var(--${d})"></i>`).join("")}
           ${S.legend.domains.join(" / ")}</p>
       </div>
-      <button class="lclear" onclick="clearLegend()" title="Clear Legend"
+      <button class="lclear" data-a="clearLegend" title="Clear Legend"
         aria-label="Clear Legend">&#10005;</button>`;
   } else {
     lb.innerHTML = `<div class="lthumb"></div>
@@ -3902,7 +3908,7 @@ function render(){
     probs.push(`${total} card${total===1?"":"s"} in this deck ${total===1?"isn't":"aren't"} in the current card pool: `
       + S.unresolved.map(u=>`${esc(u.ref)}${u.qty>1?" ×"+u.qty:""}`).join(", ")
       + `. They stay in the deck when you save. `
-      + `<button class="btn sm quiet" onclick="dropUnresolved()">Remove them</button>`);
+      + `<button class="btn sm quiet" data-a="dropUnresolved">Remove them</button>`);
   }
   // Everything else is the active game's rules. Riftbound's checks are the
   // stage 8 block verbatim, moved behind the registry hook.
@@ -3924,14 +3930,14 @@ function render(){
   // filters
   document.getElementById("domainRow").innerHTML = DOMAINS.map(d=>
     `<button class="chip dchip${S.domainFilter.includes(d)?" on":""}"
-      style="--c:var(--${d});--dt:${DOMAIN_INK[d]}" onclick="toggleFilter('domainFilter','${d}')">${d}</button>`).join("");
+      style="--c:var(--${d});--dt:${DOMAIN_INK[d]}" data-a="toggleFilter" data-a1="domainFilter" data-a2="${esc(d)}">${d}</button>`).join("");
   document.getElementById("typeRow").innerHTML = TYPES.map(t=>
     `<button class="chip${S.typeFilter.includes(t)?" on":""}"
-      onclick="toggleFilter('typeFilter','${jsStr(t)}')">${esc(t)}</button>`).join("") +
+      data-a="toggleFilter" data-a1="typeFilter" data-a2="${esc(t)}">${esc(t)}</button>`).join("") +
     // Variants is a Riftbound control: it hides Showcase and alt-art
     // printings, which is not a distinction this stage tracks for Pokémon.
     (GAME.variantsToggle
-      ? `<button class="chip${S.variants?" on":""}" onclick="toggleVariants()">Variants</button>`
+      ? `<button class="chip${S.variants?" on":""}" data-a="toggleVariants">Variants</button>`
       : "");
   // Rarities come from the pool itself, so a new set with new rarities still works.
   const rarities = [...new Set(S.pool.map(c=>c.rarity).filter(Boolean))]
@@ -3942,7 +3948,7 @@ function render(){
   document.getElementById("rarityRow").innerHTML = `<span class="lbl">rarity</span>` +
     rarities.map(r=>
       `<button class="chip${S.rarityFilter.includes(r)?" on":""}"
-        onclick="toggleFilter('rarityFilter','${jsStr(r)}')">${esc(r)}</button>`).join("");
+        data-a="toggleFilter" data-a1="rarityFilter" data-a2="${esc(r)}">${esc(r)}</button>`).join("");
  
   // results
   const term = S.q.trim().toLowerCase();
@@ -3985,7 +3991,6 @@ function render(){
   document.getElementById("results").innerHTML = res.slice(0,S.limit).map(x=>{
     // Cross-set hits arrive as index entries; materialise only what renders.
     const c = asCard(x);
-    const id = jsStr(refOf(c));
     // Only offer destinations the card is actually legal in: Runes go to the
     // rune deck, Battlefields to battlefields, everything else main or side.
     const sug = zoneFor(c.type);
@@ -3996,11 +4001,11 @@ function render(){
     const no = addBlock(c, sug === "legend" ? "legend" : sug);
     const off = no ? ` disabled title="${esc(no)}"` : "";
     let acts;
-    if(sug === "legend")      acts = `<button class="btn sm" onclick="addCard('${id}','legend')">Legend</button>`;
-    else if(sug === "runes")  acts = `<button class="btn sm"${off} onclick="addCard('${id}','runes')">+ Rune</button>`;
-    else if(sug === "battlefields") acts = `<button class="btn sm"${off} onclick="addCard('${id}','battlefields')">+ Field</button>`;
-    else acts = `<button class="btn sm"${off} onclick="addCard('${id}','main')">+ ${ZONES.sideboard ? "Main" : "Deck"}</button>`
-             + (ZONES.sideboard ? `<button class="btn sm quiet" onclick="addCard('${id}','sideboard')">+ Side</button>` : "");
+    if(sug === "legend")      acts = `<button class="btn sm" data-a="addCard" data-a1="${esc(refOf(c))}" data-a2="legend">Legend</button>`;
+    else if(sug === "runes")  acts = `<button class="btn sm"${off} data-a="addCard" data-a1="${esc(refOf(c))}" data-a2="runes">+ Rune</button>`;
+    else if(sug === "battlefields") acts = `<button class="btn sm"${off} data-a="addCard" data-a1="${esc(refOf(c))}" data-a2="battlefields">+ Field</button>`;
+    else acts = `<button class="btn sm"${off} data-a="addCard" data-a1="${esc(refOf(c))}" data-a2="main">+ ${ZONES.sideboard ? "Main" : "Deck"}</button>`
+             + (ZONES.sideboard ? `<button class="btn sm quiet" data-a="addCard" data-a1="${esc(refOf(c))}" data-a2="sideboard">+ Side</button>` : "");
     return tileHtml(c, acts);
   }).join("");
  
@@ -4031,7 +4036,7 @@ function render(){
  
   // zone tabs + the open zone as compact rows
   document.getElementById("zoneTabs").innerHTML = Object.entries(ZONES).map(([k,z])=>
-    `<button class="ztab${ZONE_TAB===k?" on":""}" onclick="setZoneTab('${k}')">${z.short}<b>${zoneCount(k)}</b></button>`).join("");
+    `<button class="ztab${ZONE_TAB===k?" on":""}" data-a="setZoneTab" data-a1="${esc(k)}">${z.short}<b>${zoneCount(k)}</b></button>`).join("");
 
   const zk = ZONE_TAB;
   const zun = S.unresolved.filter(u=>u.zone===zk);
@@ -4052,15 +4057,15 @@ function render(){
     return `<li${opt.depth ? ` class="evo evo${Math.min(opt.depth,2)}"` : ""}>
         <i class="dot" style="background:${c.domains[0]?`var(--${c.domains[0]})`:"var(--Colorless)"}"></i>
         <button class="dname" title="${esc(c.name)}"
-          onclick="openCard('${jsStr(refOf(c))}')">${esc(c.name)}</button>
+          data-a="openCard" data-a1="${esc(refOf(c))}">${esc(c.name)}</button>
         ${opt.orphan ? `<span class="dorphan" title="Evolves from ${esc(c.evolvesFrom)}, which is not in this deck">&#8593;</span>` : ""}
         ${GAME.rowBadges ? GAME.rowBadges(c) : ""}
         ${code?`<span class="dset">${esc(code)}</span>`:""}
         ${GAME.energyCurve?`<span class="denergy">${c.energy||""}</span>`:""}
         <span class="qty">
-          <button class="step" onclick="bump('${zk}','${c.id}',-1)">–</button>
+          <button class="step" data-a="bump" data-a1="${esc(zk)}" data-a2="${esc(c.id)}" data-a3="-1">–</button>
           <b>${c.qty}</b>
-          <button class="step" onclick="bump('${zk}','${c.id}',1)"${
+          <button class="step" data-a="bump" data-a1="${esc(zk)}" data-a2="${esc(c.id)}" data-a3="1"${
             /* Refused adds get a dead-looking button otherwise. Riftbound's
                gates never refuse, so it never gets the attribute. */
             blockedNow ? ` disabled title="${esc(blockedNow)}"` : ""}>+</button>
@@ -4334,9 +4339,8 @@ function paintCard(c){
   const full = c.imageLarge || c.image;
   const art = full
     ? `<img src="${esc(full)}" alt="${esc(c.name)}" referrerpolicy="no-referrer"
-         onerror="imgFail(this,'${jsStr(c.name)}')"${GAME.artPlaceholder ? ` onload="imgLoaded(this,'${jsStr(c.name)}')"` : ""}>`
+         data-card="${esc(c.name)}">`
     : fallbackSvg(c);
-  const ref = jsStr(refOf(c));
   document.getElementById("modalBox").innerHTML = `${art}
     <div class="meta">
       <h3>${esc(c.name)}</h3>
@@ -4345,12 +4349,12 @@ function paintCard(c){
       ${c.artist?`<p class="artist">Art by ${esc(c.artist)}</p>`:""}
       <div class="modalacts">
         ${VIEW === "deck" && GAME.legend && c.type === "Legend"
-          ? `<button class="btn" onclick="addCard('${ref}','legend');closeModal()">Set as Legend</button>`
+          ? `<button class="btn" data-a="setLegend" data-a1="${esc(refOf(c))}">Set as Legend</button>`
           : ""}
         ${VIEW === "deck" && GAME.legend && c.supertype === "Champion"
-          ? `<button class="btn" onclick="setChampion('${ref}');closeModal()">Set as Champion</button>`
+          ? `<button class="btn" data-a="setChampion" data-a1="${esc(refOf(c))}">Set as Champion</button>`
           : ""}
-        <button class="btn quiet" onclick="closeModal()">Close</button>
+        <button class="btn quiet" data-a="closeModal">Close</button>
       </div>
     </div>`;
 }
@@ -4458,6 +4462,86 @@ function copyText(){
     .catch(()=>note("Clipboard blocked — use Export instead."));
 }
  
+/* ------------------------- delegated actions ----------------------------
+   Every button in this app used to carry its handler as an `onclick="..."`
+   attribute, which meant the CSP had to keep `script-src 'unsafe-inline'` — and
+   a policy that allows inline script cannot contain an XSS. It also meant any
+   value going into a handler had to survive TWO decoders, the HTML attribute
+   parser and then the JS parser, which is what jsStr() existed for and exactly
+   where a subtle escaping bug hides.
+
+   Both problems go away with one dispatcher. A control now says what it does in
+   data attributes, and those are only ever read as strings — esc() is
+   sufficient, because nothing here is ever parsed as code:
+
+     <button data-a="colBump" data-1="ogn-001-298" data-2="1">
+
+   Actions are arrow wrappers so the underlying window functions keep their own
+   signatures (tests and the console call them directly), and so a name resolves
+   when the click happens rather than when this map is built. */
+const ACTIONS = {
+  // views, chrome, files
+  goView:        a => goView(a),
+  toggleTheme:   () => toggleTheme(),
+  pickFile:      () => document.getElementById("picker").click(),
+  loadPool:      () => loadPool(),
+  exportDeck:    () => exportDeck(),
+  copyText:      () => copyText(),
+  wipe:          () => wipe(),
+  closeModal:    () => closeModal(),
+  // decks
+  saveDeck:      () => saveDeckCloud(),
+  newDeck:       () => newDeck(),
+  duplicateDeck: () => duplicateDeck(),
+  switchDeck:    a => switchDeck(a),
+  deleteDeck:    a => deleteDeckRow(a),
+  signIn:        () => { toggleDeckMenu(false); window.openAuthModal?.(); },
+  // games and sets
+  switchGame:    a => switchGame(a),
+  toggleSetScope: a => toggleSetScope(a),
+  openSet:       a => openSet(a),
+  toggleSetGroup: a => toggleSetGroup(a),
+  setColSet:     a => setColSet(a),
+  // the browser and the deck
+  openCard:      a => openCard(a),
+  addCard:       (a, b) => addCard(a, b),
+  bump:          (a, b, c) => bump(a, b, Number(c)),
+  setZoneTab:    a => setZoneTab(a),
+  toggleFilter:  (a, b) => toggleFilter(a, b),
+  toggleVariants: () => toggleVariants(),
+  clearLegend:   () => clearLegend(),
+  dropUnresolved: () => dropUnresolved(),
+  setLegend:     a => { addCard(a, "legend"); closeModal(); },
+  setChampion:   a => { setChampion(a); closeModal(); },
+  // the collection
+  colBump:       (a, b) => colBump(a, Number(b)),
+  setColTab:     a => setColTab(a),
+  toggleColChip: (a, b) => toggleColChip(a, b),
+  colShowMissing: () => colShowMissing(),
+  colMarkAll:    () => colMarkAll(),
+  colClear:      () => colClear(),
+};
+
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-a]");
+  if(!el || el.disabled) return;
+  const fn = ACTIONS[el.dataset.a];
+  if(!fn) return;                       // an unknown action does nothing, loudly in dev
+  fn(el.dataset.a1, el.dataset.a2, el.dataset.a3);
+});
+
+/* Card art, the same way. `error` and `load` do not bubble, so these listen in
+   the CAPTURE phase, which reaches them anyway. data-card carries the name the
+   fallback art is generated from. */
+document.addEventListener("error", e => {
+  const img = e.target;
+  if(img instanceof HTMLImageElement && img.dataset.card) imgFail(img, img.dataset.card);
+}, true);
+document.addEventListener("load", e => {
+  const img = e.target;
+  if(img instanceof HTMLImageElement && img.dataset.card) imgLoaded(img, img.dataset.card);
+}, true);
+
 /* --------------------------------- wiring ------------------------------- */
 document.getElementById("q").addEventListener("input", e => {
   S.q = e.target.value; S.limit = 48; render();
@@ -4703,14 +4787,14 @@ function renderSetPickList(){
         : `${s.cards} cards`;
       const year = String(s.releaseDate || "").slice(0, 4);
       return `<button class="sprow${s.code === S.openSet ? " on" : ""}"
-        onclick="openSet('${jsStr(s.code)}')">
+        data-a="openSet" data-a1="${esc(s.code)}">
         ${s.symbolUrl ? `<img class="ssym" src="${esc(s.symbolUrl)}" alt=""
             loading="lazy" referrerpolicy="no-referrer">` : `<i class="ssym"></i>`}
         <span class="spn">${esc(s.name)}</span>
         <span class="spmeta">${esc(year)} · ${esc(meta)}</span></button>`;
     }).join("");
     return `<div class="spgroup">
-      <button class="spghead" onclick="toggleSetGroup('${jsStr(g.series)}')">
+      <button class="spghead" data-a="toggleSetGroup" data-a1="${esc(g.series)}">
         <span class="twist">${open ? "▾" : "▸"}</span>${esc(g.series)}
         <span class="spgn">${g.sets.length} set${g.sets.length === 1 ? "" : "s"}</span>
       </button>${rows}</div>`;

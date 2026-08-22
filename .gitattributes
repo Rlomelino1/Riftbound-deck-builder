@@ -1,0 +1,9 @@
+# index.html's CSP pins a sha256 of each of its inline scripts, so the bytes the
+# browser receives have to be identical everywhere. Without this line, Windows
+# checks the file out as CRLF while GitHub Pages serves the LF that git stores,
+# and a hash can only ever match one of the two — and a mismatch is not a
+# warning, it is a blank page. Pin the working tree to LF so there is one answer.
+#
+# scripts/csp-hashes.mjs recomputes the hashes; tests/e2e/csp.spec.js fails if
+# they have drifted, which is what stops a stale hash reaching production.
+index.html text eol=lf

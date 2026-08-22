@@ -730,7 +730,7 @@ test.describe("the game switcher", () => {
       zones: Object.keys(ZONES), deckKey: deckKey(),
     }));
     await page.click("#gameBtn");
-    await page.click("#gameMenu .gmrow[onclick*='pokemon']");
+    await page.click("#gameMenu .gmrow[data-a1='pokemon']");
     await page.waitForFunction(() => ACTIVE_GAME === "pokemon" && POOL_READY, null,
       { timeout: 20000 });
     const pk = await page.evaluate(() => ({
@@ -751,7 +751,7 @@ test.describe("the game switcher", () => {
     expect(pk.pool).toBeLessThan(640);
     // ...and back, with Riftbound exactly as it was.
     await page.click("#gameBtn");
-    await page.click("#gameMenu .gmrow[onclick*='riftbound']");
+    await page.click("#gameMenu .gmrow[data-a1='riftbound']");
     await page.waitForFunction(() => ACTIVE_GAME === "riftbound" && POOL_READY, null,
       { timeout: 20000 });
     const back = await page.evaluate(() => ({

@@ -54,7 +54,9 @@ data/sfd-pool.json      288 Spiritforged (SFD) printings; added stage 8
 data/pokemon/           174 slim per-set pools + sets.json + search-index.json; stage 9
 vendor/neon/            the Neon SDK graph, vendored (served from this origin, not a CDN)
 scripts/                build-pool-v2.mjs (Riftbound set); build-pokemon-pools.mjs
-                        (every English Pokémon set); vendor-neon.mjs (re-vendor the SDK)
+                        (every English Pokémon set); vendor-neon.mjs (re-vendor the
+                        SDK); csp-hashes.mjs (rehash the inline scripts)
+.gitattributes          pins index.html to LF — the CSP hashes depend on it
 migrations/             0001–0007 SQL + tests/ (48 SQL tests, all passing)
 tests/                  Playwright e2e suite, 175 tests in 7 files (dev/CI only),
                         + a static server. `main` will not accept a red `e2e`.
@@ -342,6 +344,39 @@ field): pool files **7.39 MB**, search index **2.07 MB**, manifest 52 KB, **9.51
 379 bytes per card**. Keeping `evolvesFrom` and `costs` cost +9.3% on the pools. The
 `--index` flag rebuilds the manifest and index from the pools on disk without refetching
 174 card files.
+
+## The CSP is load-bearing now — read this before editing index.html
+
+`script-src` no longer contains `'unsafe-inline'`. It names each of the three inline
+scripts by **sha256** instead, plus `'self'` for the vendored SDK's module imports. That
+is what makes the escaping in this app worth anything: with `'unsafe-inline'`, one missed
+`esc()` is an XSS; without it, the same miss is inert markup. Proven both ways in
+`tests/e2e/csp.spec.js` — an injected script element and an injected `onerror` both fail
+to run.
+
+**Two rules follow, and breaking either gives a blank page rather than a warning.**
+
+1. **Edit an inline script → rehash it.** `node scripts/csp-hashes.mjs --write`. The
+   `e2e` suite fails if you forget, and `main` will not merge past a red `e2e`, so the
+   worst case is a caught mistake rather than a dead site. `csp.spec.js` also asserts the
+   app *boots*, which is the check that actually notices a wrong hash rather than a
+   missing one.
+2. **index.html stays LF.** `.gitattributes` pins it. Windows checks out CRLF by default
+   while Pages serves the LF git stores, and a hash can only match one of them — so the
+   local file and production would disagree, and production is the one nobody checks by
+   hand. `csp-hashes.mjs` refuses to run on a CRLF file for the same reason.
+
+**There are no inline event handlers, and there must not be new ones** — the CSP would
+refuse to run them. Controls carry `data-a` (the action) and `data-a1..3` (its arguments),
+dispatched by one delegated listener through the `ACTIONS` map; card art uses two
+capture-phase listeners keyed on `data-card`, because `error` and `load` do not bubble.
+This also deleted `jsStr()`: nothing has to survive the HTML parser *and then* the JS
+parser any more, so `esc()` alone is correct everywhere. If you find yourself reaching for
+a JS-string escaper, you are adding an inline handler.
+
+One gotcha, learned the hard way: **`csp-hashes.mjs` blanks HTML comments before scanning
+for scripts**, because a comment that merely mentions a script tag would otherwise be
+counted as one and shift every hash after it.
 
 ## Config and secrets
 

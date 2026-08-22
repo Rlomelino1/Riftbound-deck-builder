@@ -48,23 +48,50 @@ test("liftCollection clamps out-of-range and non-numeric quantities", async ({ p
   expect(out).toEqual({ riftbound: { b: 2, c: 3, f: 1, g: 3 } });
 });
 
-test("jsStr escapes for the JS-string-in-attribute context (XSS guard)", async ({ page }) => {
+/* jsStr() is gone, and this replaces its test. It existed because a value bound
+   for an inline handler had to survive the HTML attribute parser AND THEN the JS
+   parser. Nothing is inline now, so the guarantee worth asserting is different
+   and stronger: no control anywhere carries executable markup at all. */
+test("no control carries an inline handler, in either game", async ({ page }) => {
+  for (const game of ["riftbound", "pokemon"]) {
+    await page.addInitScript((g) => localStorage.setItem("ch.game", g), game);
+    await openApp(page);
+    if (game === "pokemon") await page.waitForFunction(() => PIDX !== null);
+    // Render as much of the app as one page can hold at once.
+    await page.evaluate(() => {
+      addCard(refOf(S.pool[0]), "main");
+      toggleDeckMenu(true);
+      toggleGameMenu(true);
+      paintCard(S.pool[0]);
+      location.hash = "collection";
+      applyHash();
+    });
+    await page.waitForTimeout(200);
+    const found = await page.evaluate(() => {
+      const bad = [];
+      for (const el of document.querySelectorAll("*"))
+        for (const at of el.attributes)
+          if (/^on/i.test(at.name)) bad.push(el.tagName + "[" + at.name + "]");
+      return bad;
+    });
+    expect(found, `inline handlers found in ${game}`).toEqual([]);
+  }
+});
+
+test("a hostile value in a data attribute stays a string", async ({ page }) => {
   await openApp(page);
   const r = await page.evaluate(() => {
-    const payload = "x'); alert(1); //";
-    const escaped = jsStr(payload);
-    // The single quote must be backslash-escaped so it can't close the string,
-    // and no HTML entity (&#39;) is produced that would decode back to a quote.
-    return {
-      escaped,
-      hasBackslashQuote: escaped.includes("\\'"),
-      hasRawQuote: /(^|[^\\])'/.test(escaped),
-      hasEntity: escaped.includes("&#39;"),
-    };
+    // A payload that tries to close its attribute and add a different action.
+    const evil = `" data-a="wipe" x="`;
+    document.getElementById("results").innerHTML =
+      `<button id="probe" data-a="openCard" data-a1="${esc(evil)}">x</button>`;
+    const el = document.getElementById("probe");
+    return { action: el.dataset.a, arg: el.dataset.a1, attrs: el.attributes.length };
   });
-  expect(r.hasBackslashQuote).toBe(true);
-  expect(r.hasRawQuote).toBe(false);
-  expect(r.hasEntity).toBe(false);
+  // It stayed inside its own attribute: the action was not rewritten.
+  expect(r.action).toBe("openCard");
+  expect(r.arg).toBe(`" data-a="wipe" x="`);
+  expect(r.attrs).toBe(3);
 });
 
 test("esc encodes HTML metacharacters for text context", async ({ page }) => {
